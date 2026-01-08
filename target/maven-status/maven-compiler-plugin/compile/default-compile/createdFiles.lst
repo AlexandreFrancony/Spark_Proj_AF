@@ -1,0 +1,5 @@
+fr\esilv\spark\DailyJob.class
+fr\esilv\spark\ReportJob.class
+fr\esilv\spark\SparkMain.class
+fr\esilv\spark\DiffJob.class
+fr\esilv\spark\RecomputeJob.class
