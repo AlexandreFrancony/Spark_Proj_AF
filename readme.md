@@ -1,7 +1,3 @@
-Voici un modèle de `README.md` que tu peux mettre à la racine du projet et adapter légèrement si besoin.
-
-***
-
 # Spark_Proj_AF – BAL French Addresses Incremental Storage
 
 Ce projet implémente une solution automatisée de traitement Big Data avec Apache Spark pour stocker et historiser les adresses françaises (« BAL ») de façon incrémentale pendant au moins 30 ans, en optimisant le coût de stockage.
@@ -154,7 +150,3 @@ rm -rf bal.db /tmp/spark_project_test
 ```
 
 Les fichiers sources (`src/`), scripts `.sh`, `pom.xml` et JAR dans `target/` restent intacts.
-
-***
-
-Tu peux coller ce contenu dans un `README.md` et l’ajuster au besoin (par exemple en ajoutant 1–2 screenshots de `Pics/` dans le rapport plutôt que dans le README).
