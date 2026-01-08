@@ -1,92 +1,159 @@
 package fr.esilv.spark;
 
-import org.apache.spark.sql.*;
-import org.apache.spark.sql.functions;
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.Column;
 
 import static org.apache.spark.sql.functions.*;
 
 public class DiffJob {
 
+    /**
+     * Compare deux dossiers Parquet (dump A et dump B) et affiche les stats :
+     * - REMOVED : présent seulement dans A
+     * - ADDED   : présent seulement dans B
+     * - MODIFIED: même uid_adresse mais contenu différent
+     * - UNCHANGED: même uid_adresse et même contenu
+     */
     public static void computeDiffBetweenFiles(SparkSession spark,
-                                               String path1,
-                                               String path2) {
+                                               String dirA,
+                                               String dirB) {
 
-        // 1) Lecture des deux snapshots
-        Dataset<Row> df1 = spark.read().parquet(path1);
-        Dataset<Row> df2 = spark.read().parquet(path2);
+        System.out.println("DiffJob - dirA=" + dirA);
+        System.out.println("DiffJob - dirB=" + dirB);
 
-        System.out.println("DiffJob - initial snapshot1 rows = " + df1.count());
-        System.out.println("DiffJob - initial snapshot2 rows = " + df2.count());
+        Dataset<Row> dfA = spark.read().parquet(dirA).cache();
+        Dataset<Row> dfB = spark.read().parquet(dirB).cache();
 
-        // 2) Échantillon : 1 000 000 lignes max, triées par uid_adresse
-        df1 = df1.orderBy(col("uid_adresse")).limit(1_000_000);
-        df2 = df2.orderBy(col("uid_adresse")).limit(1_000_000);
+        long countA = dfA.count();
+        long countB = dfB.count();
 
-        System.out.println("DiffJob - after limit, snapshot1 rows = " + df1.count());
-        System.out.println("DiffJob - after limit, snapshot2 rows = " + df2.count());
+        System.out.println();
+        System.out.println("========================================");
+        System.out.println("DIFF ANALYSIS");
+        System.out.println("========================================");
+        System.out.println("Dataset A: " + dirA + " (" + String.format("%,d", countA) + " rows)");
+        System.out.println("Dataset B: " + dirB + " (" + String.format("%,d", countB) + " rows)");
+        System.out.println("----------------------------------------");
 
-        // 3) Harmoniser les colonnes
-        df1 = alignColumns(df1, df2);
-        df2 = alignColumns(df2, df1);
+        // Vérifier la présence de la clé
+        if (!hasColumn(dfA, "uid_adresse") || !hasColumn(dfB, "uid_adresse")) {
+            throw new IllegalArgumentException(
+                    "Les deux datasets doivent contenir une colonne 'uid_adresse' comme clé.");
+        }
 
-        // 4) Full outer join sur uid_adresse
-        Column joinCond = df1.col("uid_adresse").equalTo(df2.col("uid_adresse"));
-        Dataset<Row> joined = df1.alias("a").join(df2.alias("b"), joinCond, "full_outer");
+        // Colonnes communes pour comparaison de contenu
+        String[] colsA = dfA.columns();
+        String[] colsB = dfB.columns();
+        String[] common = commonColumns(colsA, colsB);
 
-        // INSERT: présent seulement dans snapshot2
-        Column onlyB = col("a.uid_adresse").isNull().and(col("b.uid_adresse").isNotNull());
-        Dataset<Row> inserts = joined.filter(onlyB)
-                .select(col("b.*"))
-                .withColumn("op", lit("INSERT"));
+        // Hash de contenu (hors uid_adresse)
+        Column hashA = sha2(to_json(struct(contentColumns(common))), 256);
+        Column hashB = sha2(to_json(struct(contentColumns(common))), 256);
 
-        // DELETE: présent seulement dans snapshot1
-        Column onlyA = col("a.uid_adresse").isNotNull().and(col("b.uid_adresse").isNull());
-        Dataset<Row> deletes = joined.filter(onlyA)
-                .select(col("a.*"))
-                .withColumn("op", lit("DELETE"));
+        dfA = dfA.withColumn("content_hash", hashA);
+        dfB = dfB.withColumn("content_hash", hashB);
 
-        // UPDATE: même uid_adresse mais contenu différent
-        Column both = col("a.uid_adresse").isNotNull().and(col("b.uid_adresse").isNotNull());
+        // REMOVED: dans A mais pas dans B
+        long removed = dfA.join(dfB,
+                        dfA.col("uid_adresse").equalTo(dfB.col("uid_adresse")),
+                        "left_anti")
+                .count();
 
-        List<String> cols = Arrays.stream(df1.columns())
-                .filter(c -> !c.equals("op"))
-                .collect(Collectors.toList());
+        // ADDED: dans B mais pas dans A
+        long added = dfB.join(dfA,
+                        dfB.col("uid_adresse").equalTo(dfA.col("uid_adresse")),
+                        "left_anti")
+                .count();
 
-        Column aHash = sha2(to_json(struct(
-                cols.stream().map(c -> col("a." + c)).toArray(Column[]::new)
-        )), 256);
-        Column bHash = sha2(to_json(struct(
-                cols.stream().map(c -> col("b." + c)).toArray(Column[]::new)
-        )), 256);
+        // MODIFIED: même uid_adresse mais hash différent
+        long modified = dfA.as("a")
+                .join(dfB.as("b"),
+                        dfA.col("uid_adresse").equalTo(dfB.col("uid_adresse")),
+                        "inner")
+                .where(col("a.content_hash").notEqual(col("b.content_hash")))
+                .count();
 
-        Column changed = both.and(aHash.notEqual(bHash));
+        // UNCHANGED: même uid_adresse et même hash
+        long unchanged = dfA.as("a")
+                .join(dfB.as("b"),
+                        dfA.col("uid_adresse").equalTo(dfB.col("uid_adresse")),
+                        "inner")
+                .where(col("a.content_hash").equalTo(col("b.content_hash")))
+                .count();
 
-        Dataset<Row> updates = joined.filter(changed)
-                .select(col("b.*"))
-                .withColumn("op", lit("UPDATE"));
+        System.out.println(" REMOVED   : " + String.format("%,d", removed));
+        System.out.println(" ADDED     : " + String.format("%,d", added));
+        System.out.println(" MODIFIED  : " + String.format("%,d", modified));
+        System.out.println(" UNCHANGED : " + String.format("%,d", unchanged));
+        System.out.println("----------------------------------------");
+        long totalChanges = removed + added + modified;
+        System.out.println(" TOTAL CHANGES: " + String.format("%,d", totalChanges));
+        if (countA > 0) {
+            double pct = (totalChanges * 100.0) / countA;
+            System.out.println(" Change rate (vs A): " + String.format("%.2f%%", pct));
+        }
+        System.out.println("========================================");
+        System.out.println();
 
-        long insertCount = inserts.count();
-        long updateCount = updates.count();
-        long deleteCount = deletes.count();
+        // Échantillons
+        if (removed > 0) {
+            System.out.println("Sample REMOVED (max 5):");
+            dfA.join(dfB,
+                            dfA.col("uid_adresse").equalTo(dfB.col("uid_adresse")),
+                            "left_anti")
+                    .drop("content_hash")
+                    .show(5, false);
+        }
 
-        System.out.println("DiffJob - inserts=" + insertCount
-                + ", updates=" + updateCount
-                + ", deletes=" + deleteCount);
+        if (added > 0) {
+            System.out.println("Sample ADDED (max 5):");
+            dfB.join(dfA,
+                            dfB.col("uid_adresse").equalTo(dfA.col("uid_adresse")),
+                            "left_anti")
+                    .drop("content_hash")
+                    .show(5, false);
+        }
+
+        if (modified > 0) {
+            System.out.println("Sample MODIFIED (max 5) - version B:");
+            dfB.as("b")
+                    .join(dfA.as("a"),
+                            dfB.col("uid_adresse").equalTo(dfA.col("uid_adresse")),
+                            "inner")
+                    .where(col("b.content_hash").notEqual(col("a.content_hash")))
+                    .select(col("b.*"))
+                    .drop("content_hash")
+                    .show(5, false);
+        }
     }
 
-    private static Dataset<Row> alignColumns(Dataset<Row> df, Dataset<Row> ref) {
-        List<String> refCols = Arrays.asList(ref.columns());
-        Dataset<Row> res = df;
-        for (String colName : refCols) {
-            if (!Arrays.asList(res.columns()).contains(colName)) {
-                res = res.withColumn(colName, lit(null));
+    private static boolean hasColumn(Dataset<Row> df, String name) {
+        for (String c : df.columns()) {
+            if (c.equals(name)) return true;
+        }
+        return false;
+    }
+
+    private static String[] commonColumns(String[] a, String[] b) {
+        java.util.Set<String> set = new java.util.HashSet<>();
+        for (String s : a) set.add(s);
+        java.util.List<String> res = new java.util.ArrayList<>();
+        for (String s : b) {
+            if (set.contains(s)) res.add(s);
+        }
+        return res.toArray(new String[0]);
+    }
+
+    // colonnes utilisées pour le hash (toutes sauf uid_adresse et content_hash)
+    private static Column[] contentColumns(String[] all) {
+        java.util.List<Column> cols = new java.util.ArrayList<>();
+        for (String c : all) {
+            if (!c.equals("uid_adresse") && !c.equals("content_hash")) {
+                cols.add(col(c));
             }
         }
-        res = res.select(refCols.stream().map(functions::col).toArray(Column[]::new));
-        return res;
+        return cols.toArray(new Column[0]);
     }
 }

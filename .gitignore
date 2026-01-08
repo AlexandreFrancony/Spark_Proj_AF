@@ -1,0 +1,29 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# Logs d'exécution
+logs/
+*.log
+
+# Fichiers temporaires Spark / Hadoop
+*.crc
+*.snappy
+*.parquet
+*.crc.tmp
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+
+# IntelliJ / IDEA
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+
+# Divers
+*.tmp
+*~

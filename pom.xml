@@ -53,7 +53,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>fr.esilv.spark.SparkMain</mainClass>
+                            <mainClass>fr.esilv.spark.DailyMain</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

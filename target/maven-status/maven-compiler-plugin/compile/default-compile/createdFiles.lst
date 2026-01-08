@@ -1,5 +1,12 @@
 fr\esilv\spark\DailyJob.class
-fr\esilv\spark\ReportJob.class
-fr\esilv\spark\SparkMain.class
-fr\esilv\spark\DiffJob.class
+fr\esilv\spark\RecomputeMain$TeeOutputStream.class
 fr\esilv\spark\RecomputeJob.class
+fr\esilv\spark\RecomputeMain.class
+fr\esilv\spark\DailyMain.class
+fr\esilv\spark\DailyMain$TeeOutputStream.class
+fr\esilv\spark\DiffMain.class
+fr\esilv\spark\ReportJob.class
+fr\esilv\spark\ReportMain$TeeOutputStream.class
+fr\esilv\spark\DiffMain$TeeOutputStream.class
+fr\esilv\spark\ReportMain.class
+fr\esilv\spark\DiffJob.class

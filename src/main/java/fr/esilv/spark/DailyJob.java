@@ -3,9 +3,8 @@ package fr.esilv.spark;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
-import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.SaveMode;
-import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.functions;
 
 import java.util.Arrays;
@@ -14,15 +13,26 @@ import java.util.stream.Collectors;
 
 import static org.apache.spark.sql.functions.*;
 
+/**
+ * DailyJob
+ * Intègre un dump CSV BAN pour une date donnée, calcule les différences
+ * par rapport au dernier snapshot et met à jour les données stockées.
+ *
+ * Stockage utilisé (relatif au projet) :
+ *   - data/bal_latest : snapshot courant
+ *   - data/bal_diff   : diffs journaliers partitionnés par day=YYYY-MM-DD
+ */
 public class DailyJob {
+
+        private static final String DIFF_ROOT = "C:/SparkFolder/data/bal_diff";
+        private static final String LATEST_PATH = "C:/SparkFolder/data/bal_latest";
+
 
     public static void runDailyIntegration(SparkSession spark,
                                            String date,
-                                           String csvPath,
-                                           String diffRoot,
-                                           String latestPath) {
+                                           String csvPath) {
 
-        // Lecture du CSV BAN du jour
+        // 1) Lecture du CSV BAN du jour
         Dataset<Row> dfNew = spark.read()
                 .option("header", "true")
                 .option("delimiter", ";")
@@ -31,20 +41,22 @@ public class DailyJob {
                 .cache();
 
         System.out.println("DailyJob - date=" + date + ", rows new=" + dfNew.count());
+        System.out.println("DailyJob - DIFF_ROOT=" + DIFF_ROOT + ", LATEST_PATH=" + LATEST_PATH);
 
-        // Snapshot précédent
+        // 2) Lecture du snapshot précédent (si existe)
         Dataset<Row> dfPrev;
         boolean hasPrev = true;
+
         try {
-            dfPrev = spark.read().parquet(latestPath).cache();
-            System.out.println("DailyJob - previous latest found");
+            dfPrev = spark.read().parquet(LATEST_PATH).cache();
+            System.out.println("DailyJob - previous latest found at " + LATEST_PATH);
         } catch (Exception e) {
             hasPrev = false;
             dfPrev = spark.emptyDataFrame();
             System.out.println("DailyJob - no previous latest, treating all as INSERT");
         }
 
-        // Premier jour : tout INSERT
+        // 3) Premier jour : tout INSERT
         if (!hasPrev) {
             Dataset<Row> insertsOnly = dfNew
                     .withColumn("op", lit("INSERT"))
@@ -53,17 +65,21 @@ public class DailyJob {
             insertsOnly.write()
                     .mode(SaveMode.Overwrite)
                     .partitionBy("day")
-                    .parquet(diffRoot);
+                    .parquet(DIFF_ROOT);
 
-            dfNew.write().mode(SaveMode.Overwrite).parquet(latestPath);
+            dfNew.write()
+                    .mode(SaveMode.Overwrite)
+                    .parquet(LATEST_PATH);
+
+            System.out.println("DailyJob - first run, inserted rows=" + dfNew.count());
             return;
         }
 
-        // Harmoniser les colonnes
+        // 4) Harmoniser les colonnes entre ancien et nouveau
         dfPrev = alignColumns(dfPrev, dfNew);
-        dfNew  = alignColumns(dfNew, dfPrev);
+        dfNew = alignColumns(dfNew, dfPrev);
 
-        // Full outer sur uid_adresse (clé)
+        // 5) Full outer join sur uid_adresse (clé métier)
         Column joinCond = dfPrev.col("uid_adresse").equalTo(dfNew.col("uid_adresse"));
         Dataset<Row> joined = dfPrev.alias("p").join(dfNew.alias("n"), joinCond, "full_outer");
 
@@ -83,15 +99,19 @@ public class DailyJob {
         Column both = col("p.uid_adresse").isNotNull().and(col("n.uid_adresse").isNotNull());
 
         // Hash JSON pour comparer toutes les colonnes (hors op, day)
-        Column pHash = functions.sha2(to_json(struct(Arrays.stream(dfPrev.columns())
-                .filter(c -> !c.equals("op") && !c.equals("day"))
-                .map(c -> col("p." + c))
-                .toArray(Column[]::new))), 256);
+        Column pHash = functions.sha2(
+                to_json(struct(Arrays.stream(dfPrev.columns())
+                        .filter(c -> !c.equals("op") && !c.equals("day"))
+                        .map(c -> col("p." + c))
+                        .toArray(Column[]::new))),
+                256);
 
-        Column nHash = functions.sha2(to_json(struct(Arrays.stream(dfNew.columns())
-                .filter(c -> !c.equals("op") && !c.equals("day"))
-                .map(c -> col("n." + c))
-                .toArray(Column[]::new))), 256);
+        Column nHash = functions.sha2(
+                to_json(struct(Arrays.stream(dfNew.columns())
+                        .filter(c -> !c.equals("op") && !c.equals("day"))
+                        .map(c -> col("n." + c))
+                        .toArray(Column[]::new))),
+                256);
 
         Column changed = both.and(pHash.notEqual(nHash));
 
@@ -99,20 +119,24 @@ public class DailyJob {
                 .select(col("n.*"))
                 .withColumn("op", lit("UPDATE"));
 
-        // Diff du jour
+        // 6) Diff du jour -> data/bal_diff/day=YYYY-MM-DD
         Dataset<Row> diffDay = inserts.unionByName(updates).unionByName(deletes)
                 .withColumn("day", lit(date));
 
         diffDay.write()
                 .mode(SaveMode.Overwrite)
                 .partitionBy("day")
-                .parquet(diffRoot);
+                .parquet(DIFF_ROOT);
 
-        System.out.println("DailyJob - inserts=" + inserts.count()
-                + ", updates=" + updates.count()
-                + ", deletes=" + deletes.count());
+        long insertCount = inserts.count();
+        long updateCount = updates.count();
+        long deleteCount = deletes.count();
 
-        // Recalcul du latest
+        System.out.println("DailyJob - inserts=" + insertCount
+                + ", updates=" + updateCount
+                + ", deletes=" + deleteCount);
+
+        // 7) Recalcul de bal_latest à partir du snapshot précédent
         Dataset<Row> state = dfPrev;
 
         // Deletes
@@ -131,18 +155,29 @@ public class DailyJob {
         // Inserts
         state = state.unionByName(inserts.drop("op", "day"));
 
-        state.write().mode(SaveMode.Overwrite).parquet(latestPath);
+        state.write()
+                .mode(SaveMode.Overwrite)
+                .parquet(LATEST_PATH);
+
+        System.out.println("DailyJob - latest snapshot written to " + LATEST_PATH
+                + ", rows=" + state.count());
     }
 
-    // Ajoute les colonnes manquantes et réordonne comme ref
+    /**
+     * Ajoute les colonnes manquantes de ref dans df et réordonne les colonnes
+     * dans le même ordre que ref.
+     */
     private static Dataset<Row> alignColumns(Dataset<Row> df, Dataset<Row> ref) {
         List<String> refCols = Arrays.asList(ref.columns());
         Dataset<Row> res = df;
+        List<String> currentCols = Arrays.asList(res.columns());
+
         for (String colName : refCols) {
-            if (!Arrays.asList(res.columns()).contains(colName)) {
+            if (!currentCols.contains(colName)) {
                 res = res.withColumn(colName, lit(null));
             }
         }
+
         res = res.select(refCols.stream().map(functions::col).toArray(Column[]::new));
         return res;
     }
