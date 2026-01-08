@@ -23,12 +23,12 @@ import static org.apache.spark.sql.functions.*;
  */
 public class DailyJob {
 
-    // Racine data relative au projet
-    private static final String DATA_ROOT = "/home/bloster/spark_data";
+    // Racine data relative au répertoire courant
+        private static final String DATA_ROOT = System.getProperty("user.dir") + "/data";
 
-    // Sous-dossiers sous data/
-    private static final String DIFF_ROOT = DATA_ROOT + "/bal_diff";
-    private static final String LATEST_PATH = DATA_ROOT + "/bal_latest";
+        private static final String DIFF_ROOT   = DATA_ROOT + "/bal_diff";
+        private static final String LATEST_PATH = DATA_ROOT + "/bal_latest";
+
 
     public static void runDailyIntegration(SparkSession spark,
                                            String date,
@@ -37,10 +37,18 @@ public class DailyJob {
         // 1) Lecture du CSV BAN du jour
         Dataset<Row> dfNew = spark.read()
                 .option("header", "true")
-                .option("delimiter", ";")
+                .option("delimiter", ",") // et pas ";"
                 .option("inferSchema", "true")
                 .csv(csvPath)
                 .cache();
+
+
+        // Adaptation pour les CSV mocks qui ont `id` au lieu de `uid_adresse`
+        if (java.util.Arrays.asList(dfNew.columns()).contains("id")
+                && !java.util.Arrays.asList(dfNew.columns()).contains("uid_adresse")) {
+                dfNew = dfNew.withColumnRenamed("id", "uid_adresse");
+        }
+
 
         System.out.println("DailyJob - date=" + date + ", rows new=" + dfNew.count());
         System.out.println("DailyJob - DIFF_ROOT=" + DIFF_ROOT + ", LATEST_PATH=" + LATEST_PATH);
@@ -50,12 +58,19 @@ public class DailyJob {
         boolean hasPrev = true;
 
         try {
-            dfPrev = spark.read().parquet(LATEST_PATH).cache();
-            System.out.println("DailyJob - previous latest found at " + LATEST_PATH);
-        } catch (Exception e) {
-            hasPrev = false;
-            dfPrev = spark.emptyDataFrame();
-            System.out.println("DailyJob - no previous latest, treating all as INSERT");
+                dfPrev = spark.read().parquet(LATEST_PATH).cache();
+
+                // Adaptation pour les snapshots mocks qui auraient `id` au lieu de `uid_adresse`
+                if (java.util.Arrays.asList(dfPrev.columns()).contains("id")
+                        && !java.util.Arrays.asList(dfPrev.columns()).contains("uid_adresse")) {
+                        dfPrev = dfPrev.withColumnRenamed("id", "uid_adresse");
+                }
+
+                System.out.println("DailyJob - previous latest found at " + LATEST_PATH);
+                } catch (Exception e) {
+                hasPrev = false;
+                dfPrev = spark.emptyDataFrame();
+                System.out.println("DailyJob - no previous latest, treating all as INSERT");
         }
 
         // 3) Premier jour : tout INSERT

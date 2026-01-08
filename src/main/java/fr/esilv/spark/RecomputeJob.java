@@ -13,8 +13,11 @@ import static org.apache.spark.sql.functions.*;
 
 public class RecomputeJob {
 
-    private static final String DIFF_ROOT   = "C:/SparkFolder/data/bal_diff";
-    private static final String LATEST_PATH = "C:/SparkFolder/data/bal_latest";
+        // Racine data relative au répertoire courant
+        private static final String DATA_ROOT = System.getProperty("user.dir") + "/data";
+        private static final String DIFF_ROOT   = DATA_ROOT + "/bal_diff";
+        private static final String LATEST_PATH = DATA_ROOT + "/bal_latest";
+
 
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd");

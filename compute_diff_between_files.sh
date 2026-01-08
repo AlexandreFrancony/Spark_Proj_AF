@@ -22,4 +22,4 @@ if [ ! -f "$JAR_FILE" ]; then
   exit 1
 fi
 
-spark-submit --class fr.esilv.spark.DiffMain --master local[*] --driver-memory 16g "$JAR_FILE" "$DIR_A" "$DIR_B"
+spark-submit --class fr.esilv.spark.DiffMain --master local[*] --driver-memory 8g "$JAR_FILE" "$DIR_A" "$DIR_B"

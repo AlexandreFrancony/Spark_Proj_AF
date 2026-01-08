@@ -12,4 +12,4 @@ if [ ! -f "$JAR_FILE" ]; then
   exit 1
 fi
 
-spark-submit --class fr.esilv.spark.ReportMain --master local[*] --driver-memory 16g "$JAR_FILE"
+spark-submit --class fr.esilv.spark.ReportMain --master local[*] --driver-memory 8g "$JAR_FILE"
