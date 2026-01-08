@@ -14,7 +14,7 @@ import static org.apache.spark.sql.functions.*;
 public class RecomputeJob {
 
         // Racine data relative au répertoire courant
-        private static final String DATA_ROOT = System.getProperty("user.dir") + "/data";
+        private static final String DATA_ROOT = System.getProperty("user.dir") + "/bal.db";
         private static final String DIFF_ROOT   = DATA_ROOT + "/bal_diff";
         private static final String LATEST_PATH = DATA_ROOT + "/bal_latest";
 

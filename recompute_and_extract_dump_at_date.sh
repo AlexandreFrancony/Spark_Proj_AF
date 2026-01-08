@@ -1,12 +1,11 @@
 #!/bin/bash
-
-# Usage: ./recompute_and_extract_dump_at_date.sh <date: yyyy-MM-dd> <outputDir>
+# Usage: ./recompute_and_extract_dump_at_date.sh <date> <output_dir>
 # Example: ./recompute_and_extract_dump_at_date.sh 2025-01-24 /tmp/recap_dumpA
 
 set -e
 
 if [ $# -ne 2 ]; then
-  echo "Usage: $0 <date: yyyy-MM-dd> <outputDir>"
+  echo "Usage: $0 <date> <output_dir>"
   echo "Example: $0 2025-01-24 /tmp/recap_dumpA"
   exit 1
 fi

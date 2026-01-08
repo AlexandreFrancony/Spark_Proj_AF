@@ -1,6 +1,7 @@
 fr/esilv/spark/DailyMain$TeeOutputStream.class
 fr/esilv/spark/RecomputeMain$TeeOutputStream.class
 fr/esilv/spark/ReportMain.class
+fr/esilv/spark/SparkMain.class
 fr/esilv/spark/DailyMain.class
 fr/devinci/bigdata/MockDataGenerator.class
 fr/esilv/spark/ReportMain$TeeOutputStream.class

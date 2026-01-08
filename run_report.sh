@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Usage: ./run_report.sh
 
 set -e

@@ -1,12 +1,11 @@
 #!/bin/bash
-
-# Usage: ./compute_diff_between_files.sh <parquetDirA> <parquetDirB>
+# Usage: ./compute_diff_between_files.sh <parquet_dir_1> <parquet_dir_2>
 # Example: ./compute_diff_between_files.sh /tmp/recap_dumpA /tmp/recap_dumpB
 
 set -e
 
 if [ $# -ne 2 ]; then
-  echo "Usage: $0 <parquetDirA> <parquetDirB>"
+  echo "Usage: $0 <parquet_dir_1> <parquet_dir_2>"
   echo "Example: $0 /tmp/recap_dumpA /tmp/recap_dumpB"
   exit 1
 fi
