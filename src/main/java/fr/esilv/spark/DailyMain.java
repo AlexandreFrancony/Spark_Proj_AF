@@ -1,6 +1,7 @@
 package fr.esilv.spark;
 
 import org.apache.spark.sql.SparkSession;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
@@ -8,9 +9,10 @@ import java.io.PrintStream;
 public class DailyMain {
 
     public static void main(String[] args) {
+
         if (args.length != 2) {
-            System.err.println("Usage: DailyMain <date: yyyy-MM-dd> <csvFilePath>");
-            System.err.println("Example: DailyMain 2025-01-01 C:/data/dump-2025-01-01.csv");
+            System.err.println("Usage: DailyMain <date YYYY-MM-DD> <csvPath>");
+            System.err.println("Example: DailyMain 2025-01-01 data/adresses-france.csv");
             System.exit(1);
         }
 
@@ -22,6 +24,7 @@ public class DailyMain {
             if (!logDir.exists()) {
                 logDir.mkdirs();
             }
+
             FileOutputStream fos = new FileOutputStream("logs/daily.log", false);
             PrintStream fileOut = new PrintStream(fos, true, "UTF-8");
 
@@ -32,17 +35,17 @@ public class DailyMain {
         }
 
         SparkSession spark = SparkSession.builder()
-                .appName("BAL Daily Integration - " + date)
-                .master("local[*]")
-                .config("spark.sql.adaptive.enabled", "true")
-                .getOrCreate();
+            .appName("BAL Daily Integration - " + date)
+            .master("local[*]")
+            .config("spark.sql.adaptive.enabled", "true")
+            .config("spark.sql.parquet.datetimeRebaseModeInWrite", "LEGACY")
+            .getOrCreate();
 
         try {
             System.out.println("==== DailyMain ====");
-            System.out.println("date       = " + date);
-            System.out.println("csvPath    = " + csvPath);
+            System.out.println("date = " + date);
+            System.out.println("csvPath = " + csvPath);
             System.out.println("===================");
-
             DailyJob.runDailyIntegration(spark, date, csvPath);
         } catch (Exception e) {
             e.printStackTrace();

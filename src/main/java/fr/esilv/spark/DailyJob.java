@@ -9,7 +9,6 @@ import org.apache.spark.sql.functions;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.apache.spark.sql.functions.*;
 
@@ -19,14 +18,17 @@ import static org.apache.spark.sql.functions.*;
  * par rapport au dernier snapshot et met à jour les données stockées.
  *
  * Stockage utilisé (relatif au projet) :
- *   - data/bal_latest : snapshot courant
- *   - data/bal_diff   : diffs journaliers partitionnés par day=YYYY-MM-DD
+ * - data/bal_latest : snapshot courant
+ * - data/bal_diff   : diffs journaliers partitionnés par day=YYYY-MM-DD
  */
 public class DailyJob {
 
-        private static final String DIFF_ROOT = "C:/SparkFolder/data/bal_diff";
-        private static final String LATEST_PATH = "C:/SparkFolder/data/bal_latest";
+    // Racine data relative au projet
+    private static final String DATA_ROOT = "/home/bloster/spark_data";
 
+    // Sous-dossiers sous data/
+    private static final String DIFF_ROOT = DATA_ROOT + "/bal_diff";
+    private static final String LATEST_PATH = DATA_ROOT + "/bal_latest";
 
     public static void runDailyIntegration(SparkSession spark,
                                            String date,
@@ -104,14 +106,16 @@ public class DailyJob {
                         .filter(c -> !c.equals("op") && !c.equals("day"))
                         .map(c -> col("p." + c))
                         .toArray(Column[]::new))),
-                256);
+                256
+        );
 
         Column nHash = functions.sha2(
                 to_json(struct(Arrays.stream(dfNew.columns())
                         .filter(c -> !c.equals("op") && !c.equals("day"))
                         .map(c -> col("n." + c))
                         .toArray(Column[]::new))),
-                256);
+                256
+        );
 
         Column changed = both.and(pHash.notEqual(nHash));
 
